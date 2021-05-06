@@ -1,4 +1,4 @@
-## Documentation for using ODC on Jetson development boards
+# Documentation for using ODC on Jetson development boards
 
 To install image on SD card follow official documentation on Nvidia website.
 To install OpenDataCam follow ODC documentation
