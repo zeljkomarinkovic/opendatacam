@@ -11,13 +11,22 @@ Once you have downloaded the appropriate file, double-click on the installation 
 Connect to a VPS with PuTTy via Password
 After opening PuTTY, you should see a screen that looks something like this:
 
+<img width="446" alt="Screenshot 2021-05-06 at 15 08 36" src="https://user-images.githubusercontent.com/23746207/117303561-1f0ca700-ae7d-11eb-8983-3a5758a555fd.png">
+
+
 In the field labeled Host Name (or IP address), enter the IP address or hostname of your PuTTy compatible VPS, like so:
 • In case of NGROK
 o 0.tcp.ngrok.io Port: 1234
 • Or in local network
 o 172.20.57.72 Port: 22
 
+<img width="421" alt="Screenshot 2021-05-06 at 15 13 23" src="https://user-images.githubusercontent.com/23746207/117304094-a823de00-ae7d-11eb-89b4-150101fea4aa.png">
+
+
 Verify that PuTTy SSH has been chosen. You'll also want to verify your SSH settings, so on the left menu, under “Connection,” click on “SSH” and you will see this screen:
+
+<img width="452" alt="Screenshot 2021-05-06 at 15 14 25" src="https://user-images.githubusercontent.com/23746207/117304217-ca1d6080-ae7d-11eb-9214-45ee37241764.png">
+
 
 Under “Preferred SSH protocol version” make sure you check “2” (“1” is an older and less secure version of SSH).
 At this point, you can open your SSH window, by clicking “Open.”
