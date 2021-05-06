@@ -1,51 +1,56 @@
-const express = require('express')();
-const multer  = require('multer');
-const serveStatic = require('serve-static')
-const csv = require('csv-express');
-const bodyParser = require('body-parser');
-const http = require('http');
-const next = require('next');
-const sse = require('server-sent-events');
-const ip = require('ip');
-const YOLO = require('./server/processes/YOLO');
-const Opendatacam = require('./server/Opendatacam');
-const flatten = require('lodash.flatten');
-const getURLData = require('./server/utils/urlHelper').getURLData;
-const DBManager = require('./server/db/DBManager')
-const FileSystemManager = require('./server/fs/FileSystemManager')
-const MjpegProxy = require('./server/utils/mjpegproxy').MjpegProxy;
+const express = require("express")();
+const multer = require("multer");
+const serveStatic = require("serve-static");
+const csv = require("csv-express");
+const bodyParser = require("body-parser");
+const http = require("http");
+const next = require("next");
+const sse = require("server-sent-events");
+const ip = require("ip");
+const YOLO = require("./server/processes/YOLO");
+const Opendatacam = require("./server/Opendatacam");
+const flatten = require("lodash.flatten");
+const getURLData = require("./server/utils/urlHelper").getURLData;
+const DBManager = require("./server/db/DBManager");
+const FileSystemManager = require("./server/fs/FileSystemManager");
+const MjpegProxy = require("./server/utils/mjpegproxy").MjpegProxy;
 const intercept = require("intercept-stdout");
-const config = require('./config.json');
-const configHelper = require('./server/utils/configHelper')
+const config = require("./config.json");
+const configHelper = require("./server/utils/configHelper");
+const basicAuth = require("express-basic-auth"); 
 
-if(process.env.npm_package_version !== config.OPENDATACAM_VERSION) {
-  console.log('-----------------------------------')
-  console.log(`- ERROR Config.json version doesn't match Opendatacam package.json version -`)
-  console.log(`- Use a config.json file version matching: ${process.env.npm_package_version}`)
-  console.log('-----------------------------------')
+if (process.env.npm_package_version !== config.OPENDATACAM_VERSION) {
+  console.log("-----------------------------------");
+  console.log(
+    `- ERROR Config.json version doesn't match Opendatacam package.json version -`
+  );
+  console.log(
+    `- Use a config.json file version matching: ${process.env.npm_package_version}`
+  );
+  console.log("-----------------------------------");
   return;
 }
 
-const SIMULATION_MODE = process.env.NODE_ENV !== 'production'; // When not running on the Jetson
+const SIMULATION_MODE = process.env.NODE_ENV !== "production"; // When not running on the Jetson
 // const SIMULATION_MODE = true;
 
-const port = parseInt(process.env.PORT, 10) || configHelper.getAppPort()
-const dev = process.env.NODE_ENV !== 'production'
-const app = next({ dev })
-const handle = app.getRequestHandler()
+const port = parseInt(process.env.PORT, 10) || configHelper.getAppPort();
+const dev = process.env.NODE_ENV !== "production";
+const app = next({ dev });
+const handle = app.getRequestHandler();
 
 // Log config loaded
-if(SIMULATION_MODE) {
-  console.log('-----------------------------------')
-  console.log('-     Opendatacam initialized     -')
-  console.log('- IN SIMULATION MODE              -')
-  console.log('-----------------------------------')
+if (SIMULATION_MODE) {
+  console.log("-----------------------------------");
+  console.log("-     Opendatacam initialized     -");
+  console.log("- IN SIMULATION MODE              -");
+  console.log("-----------------------------------");
 } else {
-  console.log('-----------------------------------')
-  console.log('-     Opendatacam initialized     -')
-  console.log('- Config loaded:                  -')
+  console.log("-----------------------------------");
+  console.log("-     Opendatacam initialized     -");
+  console.log("- Config loaded:                  -");
   console.log(JSON.stringify(config, null, 2));
-  console.log('-----------------------------------')
+  console.log("-----------------------------------");
 }
 
 // Init processes
@@ -54,52 +59,54 @@ YOLO.init(SIMULATION_MODE);
 // Init connection to db
 DBManager.init().then(
   () => {
-    console.log('Success init db')
+    console.log("Success init db");
   },
-  err => {
-    console.error(err)
+  (err) => {
+    console.error(err);
   }
-)
+);
 
 // TODO Move the stdout code into it's own module
 var videoResolution = null;
 
-if(SIMULATION_MODE) {
+if (SIMULATION_MODE) {
   videoResolution = {
     w: 1280,
-    h: 720
-  }
-  Opendatacam.setVideoResolution(videoResolution)
+    h: 720,
+  };
+  Opendatacam.setVideoResolution(videoResolution);
 }
 
 var stdoutBuffer = "";
 var stdoutInterval = "";
 var bufferLimit = 30000;
-var unhook_intercept = intercept(function(text) {
+var unhook_intercept = intercept(function (text) {
   var stdoutText = text.toString();
   // Hacky way to get the video resolution from YOLO
   // We parse the stdout looking for "Video stream: 640 x 480"
   // alternative would be to add this info to the JSON stream sent by YOLO, would need to send a PR to https://github.com/alexeyab/darknet
-  if(stdoutText.indexOf('Video stream:') > -1) {
-    var splitOnStream = stdoutText.toString().split("stream:")
+  if (stdoutText.indexOf("Video stream:") > -1) {
+    var splitOnStream = stdoutText.toString().split("stream:");
     var ratio = splitOnStream[1].split("\n")[0];
     videoResolution = {
-      w : parseInt(ratio.split("x")[0].trim()),
-      h : parseInt(ratio.split("x")[1].trim())
-    }
+      w: parseInt(ratio.split("x")[0].trim()),
+      h: parseInt(ratio.split("x")[1].trim()),
+    };
     Opendatacam.setVideoResolution(videoResolution);
   }
   stdoutBuffer += stdoutText;
   stdoutInterval += stdoutText;
 
   // Keep buffer maximum to 10000 characters
-  if(stdoutBuffer.length > bufferLimit) {
-    stdoutBuffer = stdoutBuffer.substring(stdoutBuffer.length - bufferLimit, stdoutBuffer.length);
+  if (stdoutBuffer.length > bufferLimit) {
+    stdoutBuffer = stdoutBuffer.substring(
+      stdoutBuffer.length - bufferLimit,
+      stdoutBuffer.length
+    );
   }
 });
 
-app.prepare()
-.then(() => {
+app.prepare().then(() => {
   // Start HTTP server
   const server = http.createServer(express);
   express.use(bodyParser.json());
@@ -107,15 +114,14 @@ app.prepare()
   // TODO add compression: https://github.com/expressjs/compression
 
   // This render pages/index.js for a request to /
-  express.get('/', (req, res) => {
-
+  express.get("/", (req, res) => {
     YOLO.start(); // Inside yolo process will check is started
 
     const urlData = getURLData(req);
     Opendatacam.listenToYOLO(urlData);
 
-    return app.render(req, res, '/')
-  })
+    return app.render(req, res, "/");
+  });
 
   /**
    * @api {get} /start Start Opendatacam
@@ -129,12 +135,12 @@ app.prepare()
    * @apiSuccessExample Success-Response:
    *  HTTP/1.1 200 OK
    *
-  */
-  express.get('/start', (req, res) => {
+   */
+  express.get("/start", (req, res) => {
     YOLO.start(); // Inside yolo process will check is started
     const urlData = getURLData(req);
     Opendatacam.listenToYOLO(urlData);
-    res.sendStatus(200)
+    res.sendStatus(200);
   });
 
   /**
@@ -150,11 +156,13 @@ app.prepare()
    *
    * More on MJPEG over HTTP: https://en.wikipedia.org/wiki/Motion_JPEG#M-JPEG_over_HTTP
    *
-  */
-  express.get('/webcam/stream', (req, res) => {
+   */
+  express.get("/webcam/stream", (req, res) => {
     const urlData = getURLData(req);
     // Proxy MJPEG stream from darknet to avoid freezing issues
-    return new MjpegProxy(`http://${urlData.address}:${config.PORTS.darknet_mjpeg_stream}`).proxyRequest(req, res);
+    return new MjpegProxy(
+      `http://${urlData.address}:${config.PORTS.darknet_mjpeg_stream}`
+    ).proxyRequest(req, res);
   });
 
   /**
@@ -169,10 +177,10 @@ app.prepare()
    *       "w": 1280,
    *       "h": 720
    *     }
-  */
-  express.get('/webcam/resolution',  (req, res) => {
+   */
+  express.get("/webcam/resolution", (req, res) => {
     res.json(videoResolution);
-  })
+  });
 
   /**
    * @api {get} /console Console
@@ -183,19 +191,19 @@ app.prepare()
    *
    * @apiSuccessExample Response
    *    Ready on http://localhost:8080 > Ready on http://192.168.0.195:8080
-  */
+   */
 
   var consoleRes = null;
   var consoleInterval = null;
-  express.get('/console',  (req, res) => {
-    if(consoleRes) {
-      console.log('New client, close previous stream')
+  express.get("/console", (req, res) => {
+    if (consoleRes) {
+      console.log("New client, close previous stream");
       consoleRes.end();
-      if(consoleInterval) {
+      if (consoleInterval) {
         clearInterval(consoleInterval);
       }
     } else {
-      console.log('First request on console stream')
+      console.log("First request on console stream");
     }
     consoleRes = res;
     consoleRes.write(stdoutBuffer);
@@ -203,8 +211,8 @@ app.prepare()
     consoleInterval = setInterval(() => {
       consoleRes.write(stdoutInterval);
       stdoutInterval = "";
-    }, 2000)
-  })
+    }, 2000);
+  });
 
   /**
    * @api {post} /counter/areas Register areas
@@ -249,9 +257,9 @@ app.prepare()
   * @apiSuccessExample Success-Response:
   *   HTTP/1.1 200 OK
   */
-  express.post('/counter/areas', (req, res) => {
-    Opendatacam.registerCountingAreas(req.body.countingAreas)
-    res.sendStatus(200)
+  express.post("/counter/areas", (req, res) => {
+    Opendatacam.registerCountingAreas(req.body.countingAreas);
+    res.sendStatus(200);
   });
 
   /**
@@ -325,9 +333,9 @@ app.prepare()
       }
    *
   */
-  express.get('/counter/areas', (req, res) => {
+  express.get("/counter/areas", (req, res) => {
     res.json(Opendatacam.getCountingAreas());
-  })
+  });
 
   // Maybe Remove the need for dependency with direct express implem: https://github.com/expressjs/compression#server-sent-events
   /**
@@ -411,10 +419,9 @@ app.prepare()
       }
    *
   */
-  express.get('/tracker/sse', sse, function(req, res) {
+  express.get("/tracker/sse", sse, function (req, res) {
     Opendatacam.startStreamingData(res.sse);
   });
-
 
   /**
    * @api {get} /recording/start Start recording
@@ -425,14 +432,14 @@ app.prepare()
    *
    * @apiSuccessExample Success-Response:
    *   HTTP/1.1 200 OK
-  */
-  express.get('/recording/start', (req, res) => {
-    if(config.VIDEO_INPUT !== "file") {
+   */
+  express.get("/recording/start", (req, res) => {
+    if (config.VIDEO_INPUT !== "file") {
       Opendatacam.startRecording();
     } else {
-      Opendatacam.requestFileRecording()
+      Opendatacam.requestFileRecording();
     }
-    res.sendStatus(200)
+    res.sendStatus(200);
   });
 
   /**
@@ -444,12 +451,11 @@ app.prepare()
    *
    * @apiSuccessExample Success-Response:
    *   HTTP/1.1 200 OK
-  */
-  express.get('/recording/stop', (req, res) => {
+   */
+  express.get("/recording/stop", (req, res) => {
     Opendatacam.stopRecording();
-    res.sendStatus(200)
+    res.sendStatus(200);
   });
-
 
   /**
    * @api {get} /recordings?offset=:offset&limit=:limit List
@@ -516,21 +522,21 @@ app.prepare()
    *    }
    *
   */
-  express.get('/recordings', (req, res) => {
+  express.get("/recordings", (req, res) => {
     var limit = parseInt(req.query.limit, 10) || 20;
     var offset = parseInt(req.query.offset, 10) || 0;
 
-    var recordingPromise = DBManager.getRecordings(limit, offset)
-    var countPromise = DBManager.getRecordingsCount()
+    var recordingPromise = DBManager.getRecordings(limit, offset);
+    var countPromise = DBManager.getRecordingsCount();
 
     Promise.all([recordingPromise, countPromise]).then((values) => {
       res.json({
         offset: offset,
         limit: limit,
         total: values[1],
-        recordings: values[0]
-      })
-    })
+        recordings: values[0],
+      });
+    });
   });
 
   /**
@@ -582,16 +588,18 @@ app.prepare()
           }
         ]
   */
-  express.get('/recording/:id/tracker', (req, res) => {
-    DBManager.getTrackerHistoryOfRecording(req.params.id).then((trackerData) => {
-      res.json(trackerData);
-      // res.setHeader('Content-disposition', 'attachment; filename= trackerData.json');
-      // res.setHeader('Content-type', 'application/json');
-      // res.write(JSON.stringify(trackerData), function (err) {
-      //     res.end();
-      // })
-    });
-  })
+  express.get("/recording/:id/tracker", (req, res) => {
+    DBManager.getTrackerHistoryOfRecording(req.params.id).then(
+      (trackerData) => {
+        res.json(trackerData);
+        // res.setHeader('Content-disposition', 'attachment; filename= trackerData.json');
+        // res.setHeader('Content-type', 'application/json');
+        // res.write(JSON.stringify(trackerData), function (err) {
+        //     res.end();
+        // })
+      }
+    );
+  });
 
   /**
    * @api {get} /recording/:id Get recording
@@ -624,11 +632,11 @@ app.prepare()
         }
       }
   */
- express.get('/recording/:id', (req, res) => {
-  DBManager.getRecording(req.params.id).then((recordingData) => {
-    res.json(recordingData)
+  express.get("/recording/:id", (req, res) => {
+    DBManager.getRecording(req.params.id).then((recordingData) => {
+      res.json(recordingData);
+    });
   });
-})
 
   /**
    * @api {delete} /recording/:id Delete recording
@@ -640,13 +648,13 @@ app.prepare()
    * @apiParam {String} id Recording id (_id field of /recordings)
    *
    * @apiSuccessExample Success-Response:
-  *   HTTP/1.1 200 OK
-  */
-  express.delete('/recording/:id', (req, res) => {
+   *   HTTP/1.1 200 OK
+   */
+  express.delete("/recording/:id", (req, res) => {
     DBManager.deleteRecording(req.params.id).then((success) => {
-      res.sendStatus(200)
+      res.sendStatus(200);
     });
-  })
+  });
 
   /**
    * @api {get} /recording/:id/counter Counter data
@@ -732,16 +740,18 @@ app.prepare()
           }
         ]
   */
-  express.get('/recording/:id/counter', (req, res) => {
-    DBManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
-      res.json(counterData);
-      // res.setHeader('Content-disposition', 'attachment; filename= trackerData.json');
-      // res.setHeader('Content-type', 'application/json');
-      // res.write(JSON.stringify(trackerData), function (err) {
-      //     res.end();
-      // })
-    });
-  })
+  express.get("/recording/:id/counter", (req, res) => {
+    DBManager.getCounterHistoryOfRecording(req.params.id).then(
+      (counterData) => {
+        res.json(counterData);
+        // res.setHeader('Content-disposition', 'attachment; filename= trackerData.json');
+        // res.setHeader('Content-type', 'application/json');
+        // res.write(JSON.stringify(trackerData), function (err) {
+        //     res.end();
+        // })
+      }
+    );
+  });
 
   /**
    * @api {get} /recording/:id/counter/csv Counter history (CSV)
@@ -765,27 +775,33 @@ app.prepare()
         "2019-05-02T19:10:34.144Z","truc","car",4151,"rightleft_bottomtop"
         "2019-05-02T19:10:36.925Z","truc","car",4156,"rightleft_bottomtop"
   */
-  express.get('/recording/:id/counter/csv', (req, res) => {
-    DBManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
-      var data = counterData.counterHistory;
-      if(data) {
-        // Flatten
-        data = flatten(data);
-        // Map counting area name
-        data = data.map((countedItem) => {
-          return {
-            ...countedItem,
-            timestamp: countedItem.timestamp.toISOString(),
-            area: counterData.areas[countedItem.area].name
-          }
-        })
-      } else {
-        data = [];
+  express.get("/recording/:id/counter/csv", (req, res) => {
+    DBManager.getCounterHistoryOfRecording(req.params.id).then(
+      (counterData) => {
+        var data = counterData.counterHistory;
+        if (data) {
+          // Flatten
+          data = flatten(data);
+          // Map counting area name
+          data = data.map((countedItem) => {
+            return {
+              ...countedItem,
+              timestamp: countedItem.timestamp.toISOString(),
+              area: counterData.areas[countedItem.area].name,
+            };
+          });
+        } else {
+          data = [];
+        }
+        console.log(`Exporting ${req.params.id} counter history to CSV`);
+        res.csv(data, false, {
+          "Content-disposition": `attachment; filename=counterData-${
+            counterData.dateStart.toISOString().split("T")[0]
+          }-${req.params.id}.csv`,
+        });
       }
-      console.log(`Exporting ${req.params.id} counter history to CSV`);
-      res.csv(data, false ,{'Content-disposition': `attachment; filename=counterData-${counterData.dateStart.toISOString().split("T")[0]}-${req.params.id}.csv`});
-    });
-  })
+    );
+  });
 
   /**
    * @api {get} /status Status
@@ -825,9 +841,9 @@ app.prepare()
       }
     }
   */
-  express.get('/status', (req, res) => {
+  express.get("/status", (req, res) => {
     res.json(Opendatacam.getStatus());
-  })
+  });
 
   /**
    * @api {get} /config Config
@@ -927,81 +943,79 @@ app.prepare()
    *
   */
 
-  express.get('/config', (req, res) => {
+  express.get("/config", (req, res) => {
     // console.log(config);
     res.json(config);
-  })
+  });
 
   // API to read opendatacam_videos directory and return list of videos available
   // TODO JSDOC
   // Get video files available in opendatacam_videos directory
-  express.get('/files', (req, res) => {
-    FileSystemManager.getFiles().then((files) => {
-      res.json(files);
-    }, (error) => {
-      res.sendStatus(500).send(error);
-    });
+  express.get("/files", (req, res) => {
+    FileSystemManager.getFiles().then(
+      (files) => {
+        res.json(files);
+      },
+      (error) => {
+        res.sendStatus(500).send(error);
+      }
+    );
   });
-
 
   var storage = multer.diskStorage({
     destination: function (req, file, cb) {
-      cb(null, FileSystemManager.getFilesDirectoryPath())
+      cb(null, FileSystemManager.getFilesDirectoryPath());
     },
     filename: function (req, file, cb) {
-      cb(null, file.originalname)
-    }
-  })
-  var uploadMulter = multer({ 
-    storage: storage, 
+      cb(null, file.originalname);
+    },
+  });
+  var uploadMulter = multer({
+    storage: storage,
     fileFilter: function (req, file, cb) {
       if (!file.originalname.match(/\.(mp4|avi|mov)$/)) {
-        return cb(new Error('Only video files are allowed!'));
+        return cb(new Error("Only video files are allowed!"));
       }
       cb(null, true);
-    } 
-  }).single('video')
+    },
+  }).single("video");
 
   // API to Upload file and restart yolo on that file
   // TODO JSDOC
   // TODO Only upload file here and then add another endpoint to restart YOLO on a given file
-  express.post('/files', function (req, res, next) {
+  express.post("/files", function (req, res, next) {
     uploadMulter(req, res, function (err) {
-      console.log('uploadMulter callback')
-      if(err) {
+      console.log("uploadMulter callback");
+      if (err) {
         console.log(err);
         res.sendStatus(500);
         return;
       }
 
       // Everything went fine.
-      console.log('File upload done');
-
+      console.log("File upload done");
 
       // Restart YOLO
-      console.log('Stop YOLO');
+      console.log("Stop YOLO");
       Opendatacam.stopRecording();
-      YOLO.stop().then(() => {
-        console.log('YOLO stopped');
-        // TODO set run on file
-        console.log(req.file.path);
-        YOLO.init(false, req.file.path);
-        YOLO.start();
-        Opendatacam.recordingStatus.filename = req.file.filename;
-      },(error) => {
-        console.log('YOLO does not stop')
-        console.log(error);
-      });
+      YOLO.stop().then(
+        () => {
+          console.log("YOLO stopped");
+          // TODO set run on file
+          console.log(req.file.path);
+          YOLO.init(false, req.file.path);
+          YOLO.start();
+          Opendatacam.recordingStatus.filename = req.file.filename;
+        },
+        (error) => {
+          console.log("YOLO does not stop");
+          console.log(error);
+        }
+      );
 
       res.json(req.file.path);
-
-
-
-    })
-  })
-
-  
-
+    });
+  });
 
   /**
    * @api {post} /ui Save UI settings
@@ -1024,9 +1038,9 @@ app.prepare()
   * @apiSuccessExample Success-Response:
   *   HTTP/1.1 200 OK
   */
-  express.post('/ui', (req, res) => {
-    Opendatacam.setUISettings(req.body)
-    res.sendStatus(200)
+  express.post("/ui", (req, res) => {
+    Opendatacam.setUISettings(req.body);
+    res.sendStatus(200);
   });
 
   /**
@@ -1045,32 +1059,43 @@ app.prepare()
           pathfinderEnabled: true
         }
   */
- express.get('/ui', (req, res) => {
-  var uiSettings = Opendatacam.getUISettings()
-  res.json(uiSettings);
-});
+  express.get("/ui", (req, res) => {
+    var uiSettings = Opendatacam.getUISettings();
+    res.json(uiSettings);
+  });
 
-  express.use("/api/doc", serveStatic('apidoc'))
+  express.use("/api/doc", serveStatic("apidoc"));
 
   // Global next.js handler
-  express.get('*', (req, res) => {
-    return handle(req, res)
-  })
+  try {
+    express.use(
+      basicAuth({
+        users: {
+          Admin: "secret",
+        },
+        challenge: true,
+        realm: "test",
+      })
+    );
+  } catch (error) {
+    console.log("ERROR", error);
+  }
 
-
+  express.get("*", (req, res) => {
+    return handle(req, res);
+  });
 
   server.listen(port, (err) => {
-    if (err) throw err
+    if (err) throw err;
     if (port === 80) {
-      console.log(`> Ready on http://localhost`)
-      console.log(`> Ready on http://${ip.address()}`)
+      console.log(`> Ready on http://localhost`);
+      console.log(`> Ready on http://${ip.address()}`);
     } else {
-      console.log(`> Ready on http://localhost:${port}`)
-      console.log(`> Ready on http://${ip.address()}:${port}`)
+      console.log(`> Ready on http://localhost:${port}`);
+      console.log(`> Ready on http://${ip.address()}:${port}`);
     }
-  })
-})
-
+  });
+});
 
 // Clean up node.js process if opendatacam stops or crash
 
@@ -1085,20 +1110,22 @@ function exitHandler(options, exitCode) {
 }
 
 //do something when app is closing
-process.on('exit', exitHandler.bind(null,{cleanup:true}));
+process.on("exit", exitHandler.bind(null, { cleanup: true }));
 
 //catches ctrl+c event
-process.on('SIGINT', exitHandler.bind(null, {exit:true}));
+process.on("SIGINT", exitHandler.bind(null, { exit: true }));
 
 // catches "kill pid" (for example: nodemon restart)
-process.on('SIGUSR1', exitHandler.bind(null, {exit:true}));
-process.on('SIGUSR2', exitHandler.bind(null, {exit:true}));
+process.on("SIGUSR1", exitHandler.bind(null, { exit: true }));
+process.on("SIGUSR2", exitHandler.bind(null, { exit: true }));
 
 //catches uncaught exceptions
 // process.on('uncaughtException', exitHandler.bind(null, {exit:true}));
 
-
-process.on('uncaughtException', function (err) {
+process.on("uncaughtException", function (err) {
   // This should not happen
-  console.log("Pheew ....! Something unexpected happened. This should be handled more gracefully. I am sorry. The culprit is: ", err);
+  console.log(
+    "Pheew ....! Something unexpected happened. This should be handled more gracefully. I am sorry. The culprit is: ",
+    err
+  );
 });
